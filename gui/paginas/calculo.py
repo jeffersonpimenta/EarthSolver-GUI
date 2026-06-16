@@ -15,9 +15,9 @@ from multiprocessing import Manager
 from nicegui import run, ui
 
 from gui import graficos
-from gui.componentes import barra_progresso, cartoes_resultado, num_json
+from gui.componentes import barra_progresso, cartoes_resultado, num_json, selo
 from gui.estado import obter_projeto
-from gui.layout import barra_passos, moldura
+from gui.layout import barra_passos, cabecalho, moldura
 from gui.solver import rodar_analitico, rodar_convergencia, rodar_numerico
 
 # fatores do estudo analitico IEEE-80
@@ -49,16 +49,16 @@ def _tabela_comparacao(a: dict, n: dict) -> None:
         {"name": "g", "label": "Grandeza", "field": "g", "align": "left"},
         {"name": "ieee", "label": "IEEE-80", "field": "ieee"},
         {"name": "num", "label": "Numerico", "field": "num"},
-    ], rows=linhas).classes("w-full")
+    ], rows=linhas).props("flat").classes("w-full")
 
 
 def _tabela_fatores(res: dict) -> None:
     """Fatores intermediarios do estudo IEEE-80."""
     linhas = [{"fator": rot, "valor": round(float(res[k]), 4)}
               for k, rot in _FATORES if k in res]
-    ui.table(columns=[{"name": "fator", "label": "Fator", "field": "fator"},
+    ui.table(columns=[{"name": "fator", "label": "Fator", "field": "fator", "align": "left"},
                       {"name": "valor", "label": "Valor", "field": "valor"}],
-             rows=linhas).classes("w-full")
+             rows=linhas).props("flat").classes("w-full")
 
 
 @ui.page("/calculo")
@@ -67,7 +67,8 @@ async def pagina_calculo() -> None:
     proj = obter_projeto()
     estado: dict = {"ieee80": None, "numerico": None}
 
-    with moldura("Calculo"):
+    with moldura("Calculo", "/calculo"):
+        cabecalho("Passo 3", "Calculo do aterramento")
         barra_passos(3)
 
         # ---------------------------------------------------- pre-requisitos
@@ -90,8 +91,8 @@ async def pagina_calculo() -> None:
         analitico_ok = "malha_retangular" in proj.eletrodo and "area" in (proj.malha or {})
 
         # ---------------------------------------------------------- metodo
-        with ui.card().classes("w-full"):
-            ui.label("Metodo de calculo").classes("font-bold")
+        with ui.card().classes("w-full p-5 gap-2"):
+            ui.label("Metodo de calculo").classes("es-section-title")
             if analitico_ok:
                 metodo = ui.radio({"ieee80": "IEEE-80", "numerico": "Numerico",
                                    "ambos": "Ambos (comparar)"}, value="ambos").props("inline")
@@ -112,63 +113,68 @@ async def pagina_calculo() -> None:
                 return
 
             if ieee and num:
-                _tabela_comparacao(ieee, num["resultado"])
+                with ui.row().classes("items-center gap-4"):
+                    selo(bool(ieee.get("aprovado") and num["resultado"].get("aprovado")))
+                with ui.card().classes("w-full p-0 overflow-hidden"):
+                    _tabela_comparacao(ieee, num["resultado"])
             else:
                 cartoes_resultado(ieee or num["resultado"])
 
             if ieee:
-                ui.label("Fatores IEEE-80").classes("font-bold")
-                _tabela_fatores(ieee)
+                ui.label("Fatores IEEE-80").classes("es-section-title")
+                with ui.card().classes("w-full p-0 overflow-hidden"):
+                    _tabela_fatores(ieee)
 
             if num:
                 ras = num["raster"]
                 rt, rp = num["raster_toque"], num["raster_passo"]
                 cor, conds = num["corrente"], num["condutores"]
                 et, ep = num["resultado"]["E_toque"], num["resultado"]["E_passo"]
-                ui.label("Graficos do solver numerico").classes("font-bold")
-                with ui.tabs() as plots:
-                    ui.tab("mapa", "Mapa de potencial")
-                    ui.tab("toque", "Tensao de toque")
-                    ui.tab("passo", "Tensao de passo")
-                    ui.tab("margem", "Margem")
-                    ui.tab("corrente", "Corrente")
-                    ui.tab("perfis", "Perfis")
-                    ui.tab("s3d", "Superficie 3D")
-                    ui.tab("c3d", "Campo 3D (toque)")
-                    ui.tab("geo", "Geometria")
-                with ui.tab_panels(plots, value="mapa").classes("w-full"):
-                    with ui.tab_panel("mapa"):
-                        ui.plotly(graficos.mapa_potencial(
-                            ras["x"], ras["y"], ras["phi"], gpr=ras["GPR"],
-                            condutores=conds)).classes("w-full")
-                    with ui.tab_panel("toque"):
-                        ui.plotly(graficos.mapa_toque(
-                            rt["x"], rt["y"], rt["v"], limite=et,
-                            condutores=conds)).classes("w-full")
-                    with ui.tab_panel("passo"):
-                        ui.plotly(graficos.mapa_passo(
-                            rp["x"], rp["y"], rp["v"], limite=ep,
-                            condutores=conds)).classes("w-full")
-                    with ui.tab_panel("margem"):
-                        ui.plotly(graficos.mapa_margem(
-                            rt["x"], rt["y"], rt["v"], rp["v"], et, ep,
-                            condutores=conds)).classes("w-full")
-                    with ui.tab_panel("corrente"):
-                        ui.plotly(graficos.mapa_corrente(
-                            cor["A"], cor["B"], cor["I"])).classes("w-full")
-                    with ui.tab_panel("perfis"):
-                        ui.plotly(graficos.perfis(
-                            ras["x"], ras["y"], ras["phi"], rt["v"], rp["v"],
-                            et, ep, ras["GPR"])).classes("w-full")
-                    with ui.tab_panel("s3d"):
-                        ui.plotly(graficos.superficie_3d(
-                            ras["x"], ras["y"], ras["phi"])).classes("w-full")
-                    with ui.tab_panel("c3d"):
-                        ui.plotly(graficos.campo_3d(
-                            rt["x"], rt["y"], rt["v"],
-                            "Tensao de toque (3D)", "V")).classes("w-full")
-                    with ui.tab_panel("geo"):
-                        ui.plotly(graficos.vista_malha(conds)).classes("w-full")
+                ui.label("Graficos do solver numerico").classes("es-section-title")
+                with ui.card().classes("w-full p-3"):
+                    with ui.tabs().props("no-caps").classes("self-start") as plots:
+                        ui.tab("mapa", "Mapa de potencial")
+                        ui.tab("toque", "Tensao de toque")
+                        ui.tab("passo", "Tensao de passo")
+                        ui.tab("margem", "Margem")
+                        ui.tab("corrente", "Corrente")
+                        ui.tab("perfis", "Perfis")
+                        ui.tab("s3d", "Superficie 3D")
+                        ui.tab("c3d", "Campo 3D (toque)")
+                        ui.tab("geo", "Geometria")
+                    with ui.tab_panels(plots, value="mapa").classes("w-full"):
+                        with ui.tab_panel("mapa"):
+                            ui.plotly(graficos.mapa_potencial(
+                                ras["x"], ras["y"], ras["phi"], gpr=ras["GPR"],
+                                condutores=conds)).classes("w-full")
+                        with ui.tab_panel("toque"):
+                            ui.plotly(graficos.mapa_toque(
+                                rt["x"], rt["y"], rt["v"], limite=et,
+                                condutores=conds)).classes("w-full")
+                        with ui.tab_panel("passo"):
+                            ui.plotly(graficos.mapa_passo(
+                                rp["x"], rp["y"], rp["v"], limite=ep,
+                                condutores=conds)).classes("w-full")
+                        with ui.tab_panel("margem"):
+                            ui.plotly(graficos.mapa_margem(
+                                rt["x"], rt["y"], rt["v"], rp["v"], et, ep,
+                                condutores=conds)).classes("w-full")
+                        with ui.tab_panel("corrente"):
+                            ui.plotly(graficos.mapa_corrente(
+                                cor["A"], cor["B"], cor["I"])).classes("w-full")
+                        with ui.tab_panel("perfis"):
+                            ui.plotly(graficos.perfis(
+                                ras["x"], ras["y"], ras["phi"], rt["v"], rp["v"],
+                                et, ep, ras["GPR"])).classes("w-full")
+                        with ui.tab_panel("s3d"):
+                            ui.plotly(graficos.superficie_3d(
+                                ras["x"], ras["y"], ras["phi"])).classes("w-full")
+                        with ui.tab_panel("c3d"):
+                            ui.plotly(graficos.campo_3d(
+                                rt["x"], rt["y"], rt["v"],
+                                "Tensao de toque (3D)", "V")).classes("w-full")
+                        with ui.tab_panel("geo"):
+                            ui.plotly(graficos.vista_malha(conds)).classes("w-full")
 
             def usar() -> None:
                 if ieee:
@@ -184,16 +190,16 @@ async def pagina_calculo() -> None:
                     ui.button("Baixar IEEE-80", icon="download",
                               on_click=lambda: ui.download.content(
                                   json.dumps(ieee, indent=2, default=num_json),
-                                  "analitico.json")).props("flat")
+                                  "analitico.json")).props("outline")
                 if num:
                     ui.button("Baixar resultado", icon="download",
                               on_click=lambda: ui.download.content(
                                   json.dumps(num["resultado"], indent=2, default=num_json),
-                                  "aterramento_numerico.json")).props("flat")
+                                  "aterramento_numerico.json")).props("outline")
                     ui.button("Baixar potencial", icon="download",
                               on_click=lambda: ui.download.content(
                                   json.dumps(num["raster"], indent=2, default=num_json),
-                                  "potencial.json")).props("flat")
+                                  "potencial.json")).props("outline")
 
         async def calcular() -> None:
             escolha = metodo.value
@@ -276,12 +282,12 @@ async def pagina_calculo() -> None:
             painel_convergencia.refresh()
             ui.notify("Convergencia concluida.", type="positive")
 
-        with ui.card().classes("w-full"):
-            ui.label("Estudo de convergencia").classes("font-bold")
+        with ui.card().classes("w-full p-5 gap-2"):
+            ui.label("Estudo de convergencia").classes("es-section-title")
             ui.label("Re-resolve a malha em varias resolucoes (comp_alvo) e traca "
                      "Rg/GPR vs numero de segmentos. Etapa cara.").classes("text-sm text-grey")
             with ui.row().classes("items-center gap-3"):
                 botao_conv = ui.button("Estudar convergencia", icon="timeline",
-                                       on_click=estudar_convergencia)
+                                       on_click=estudar_convergencia).props("outline")
             barra_conv = barra_progresso()
             painel_convergencia()

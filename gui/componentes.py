@@ -1,18 +1,35 @@
-"""Componentes de UI reutilizados entre paginas (cartoes de resultado)."""
+"""Componentes de UI reutilizados entre paginas (cartoes de resultado).
+
+O visual segue a direcao "engenharia moderna" (ver `gui/layout.py`): cartoes de
+metrica com rotulo em maiusculas, valor grande monoespacado e cor de estado;
+selo de veredito (APROVADO/REPROVADO) em destaque. As classes `es-*` sao
+definidas na folha de estilo do tema em `layout.py`.
+"""
 
 from __future__ import annotations
 
 from nicegui import ui
 
 
+def selo(aprovado: bool) -> None:
+    """Selo de veredito em destaque: APROVADO (verde) ou REPROVADO (vermelho)."""
+    cls = "es-selo es-selo-ok" if aprovado else "es-selo es-selo-no"
+    with ui.row().classes(cls):
+        ui.icon("check_circle" if aprovado else "cancel").classes("text-lg")
+        ui.label("APROVADO" if aprovado else "REPROVADO")
+
+
 def cartao(titulo: str, valor: str, sub: str = "", ok: bool | None = None) -> None:
-    """Cartao compacto: titulo, valor em destaque e subtexto opcional."""
-    with ui.card().classes("min-w-[130px]"):
-        ui.label(titulo).classes("text-sm text-grey")
-        cor = "" if ok is None else (" text-positive" if ok else " text-negative")
-        ui.label(valor).classes("text-xl font-bold" + cor)
+    """Cartao de metrica: rotulo maiusculo, valor grande em mono e subtexto opcional.
+
+    `ok=True/False` tinge o valor de verde/vermelho (limite atingido ou nao).
+    """
+    with ui.card().classes("es-metric"):
+        ui.label(titulo).classes("es-metric-label")
+        cor = "" if ok is None else (" es-pos" if ok else " es-neg")
+        ui.label(valor).classes("es-metric-value" + cor)
         if sub:
-            ui.label(sub).classes("text-xs text-grey")
+            ui.label(sub).classes("es-metric-sub")
 
 
 def cartoes_resultado(res: dict) -> None:
@@ -23,9 +40,8 @@ def cartoes_resultado(res: dict) -> None:
     """
     aprovado = res.get("aprovado")
     if aprovado is not None:
-        ui.label("APROVADO" if aprovado else "REPROVADO") \
-            .classes(f"text-2xl font-bold text-{'positive' if aprovado else 'negative'}")
-    with ui.row().classes("gap-4"):
+        selo(bool(aprovado))
+    with ui.row().classes("gap-4 w-full"):
         cartao("Rg", f"{res['Rg']:.3f}", "Ohm")
         cartao("GPR", f"{res['GPR']:.1f}", "V")
         if "Em" in res:
@@ -68,8 +84,8 @@ class BarraProgresso:
         self._cont = ui.column().classes("w-full gap-1")
         with self._cont:
             self._barra = ui.linear_progress(value=0.0, show_value=False) \
-                .props("instant-feedback")
-            self._rotulo = ui.label("").classes("text-sm text-grey")
+                .props("instant-feedback rounded color=primary")
+            self._rotulo = ui.label("").classes("text-sm text-grey font-mono")
         self._cont.set_visibility(False)
 
     def iniciar(self) -> None:

@@ -11,7 +11,7 @@ from nicegui import ui
 
 from gui import graficos
 from gui.componentes import cartoes_resultado
-from gui.layout import moldura
+from gui.layout import cabecalho, moldura
 
 
 @ui.page("/visualizador")
@@ -19,9 +19,10 @@ async def pagina_visualizador() -> None:
     await ui.context.client.connected()
     estado: dict = {"res": None, "raster": None}
 
-    with moldura("Visualizador de resultados"):
-        ui.markdown("Carregue um `aterramento_numerico.json` (resultado) e/ou um "
-                    "`potencial.json` (mapa de potencial) para visualizar.")
+    with moldura("Visualizador", "/visualizador"):
+        cabecalho("Sem solver", "Visualizador de resultados",
+                  "Carregue um aterramento_numerico.json (resultado) e/ou um "
+                  "potencial.json (mapa de potencial) para revisualizar sem recalcular.")
 
         async def importar_resultado(e) -> None:
             try:
@@ -45,13 +46,11 @@ async def pagina_visualizador() -> None:
             vista.refresh()
             ui.notify("Mapa de potencial carregado.", type="positive")
 
-        with ui.row().classes("gap-6"):
+        with ui.row().classes("gap-6 w-full"):
             ui.upload(label="Resultado (.json)", on_upload=importar_resultado, auto_upload=True) \
-                .props("accept=.json flat bordered")
+                .props("accept=.json flat bordered").classes("flex-1")
             ui.upload(label="Potencial (.json)", on_upload=importar_potencial, auto_upload=True) \
-                .props("accept=.json flat bordered")
-
-        ui.separator()
+                .props("accept=.json flat bordered").classes("flex-1")
 
         @ui.refreshable
         def vista() -> None:
@@ -64,23 +63,25 @@ async def pagina_visualizador() -> None:
                 ras = estado["raster"]
                 gpr = ras.get("GPR")
                 tem_toque = gpr is not None       # toque = GPR - phi (derivavel do potencial)
-                with ui.tabs() as plots:
-                    ui.tab("mapa", "Mapa de potencial")
-                    if tem_toque:
-                        ui.tab("toque", "Tensao de toque")
-                    ui.tab("s3d", "Superficie 3D")
-                with ui.tab_panels(plots, value="mapa").classes("w-full"):
-                    with ui.tab_panel("mapa"):
-                        ui.plotly(graficos.mapa_potencial(ras["x"], ras["y"], ras["phi"],
-                                  gpr=gpr)).classes("w-full")
-                    if tem_toque:
-                        with ui.tab_panel("toque"):
-                            toque = (np.asarray(gpr, dtype=float)
-                                     - np.asarray(ras["phi"], dtype=float))
-                            ui.plotly(graficos.mapa_toque(ras["x"], ras["y"],
-                                      toque)).classes("w-full")
-                    with ui.tab_panel("s3d"):
-                        ui.plotly(graficos.superficie_3d(ras["x"], ras["y"],
-                                  ras["phi"])).classes("w-full")
+                with ui.card().classes("w-full p-3"):
+                    with ui.tabs().props("no-caps").classes("self-start") as plots:
+                        ui.tab("mapa", "Mapa de potencial")
+                        if tem_toque:
+                            ui.tab("toque", "Tensao de toque")
+                        ui.tab("s3d", "Superficie 3D")
+                    with ui.tab_panels(plots, value="mapa").classes("w-full"):
+                        with ui.tab_panel("mapa"):
+                            ui.plotly(graficos.mapa_potencial(ras["x"], ras["y"], ras["phi"],
+                                      gpr=gpr)).classes("w-full")
+                        if tem_toque:
+                            with ui.tab_panel("toque"):
+                                toque = (np.asarray(gpr, dtype=float)
+                                         - np.asarray(ras["phi"], dtype=float))
+                                ui.plotly(graficos.mapa_toque(ras["x"], ras["y"],
+                                          toque)).classes("w-full")
+                        with ui.tab_panel("s3d"):
+                            ui.plotly(graficos.superficie_3d(ras["x"], ras["y"],
+                                      ras["phi"])).classes("w-full")
 
+        ui.separator()
         vista()
