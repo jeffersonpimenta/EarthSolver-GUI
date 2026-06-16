@@ -7,6 +7,7 @@ import json
 from nicegui import ui
 
 from gui import recursos
+from gui.componentes import dropzone
 from gui.estado import Projeto, obter_projeto
 from gui.layout import cabecalho, moldura
 
@@ -43,17 +44,19 @@ async def pagina_inicio() -> None:
     with moldura("Inicio", "/"):
         cabecalho("Suite de aterramento eletrico", "Bem-vindo ao EarthSolver", _LEAD)
 
-        with ui.row().classes("w-full gap-5 items-start no-wrap"):
+        with ui.grid().classes("w-full gap-5 items-start") \
+                .style("grid-template-columns:minmax(0,1.45fr) minmax(0,1fr)"):
             # ----------------------------------------------- estado do projeto
-            with ui.card().classes("flex-1 p-0 overflow-hidden"):
-                with ui.row().classes("items-center justify-between w-full px-5 py-4") \
-                        .style("border-bottom:1px solid #eef0f3"):
-                    ui.label("Estado do projeto").classes("es-section-title")
-                    ui.label("clique para ir ao passo").classes("text-xs text-grey")
-
+            with ui.card().classes("w-full p-0 overflow-hidden"):
                 @ui.refreshable
                 def status() -> None:
-                    with ui.column().classes("w-full gap-0 px-5"):
+                    carregados = sum(getattr(proj, c) is not None for c, _, _ in _SECOES)
+                    total = len(_SECOES)
+                    with ui.row().classes("items-center justify-between w-full px-5 py-4") \
+                            .style("border-bottom:1px solid #eef0f3"):
+                        ui.label("Estado do projeto").classes("es-section-title")
+                        ui.label(f"{carregados} / {total} carregados").classes("es-card-meta")
+                    with ui.column().classes("w-full gap-0 px-5 pb-2"):
                         for campo, rotulo, rota in _SECOES:
                             carregado = getattr(proj, campo) is not None
                             with ui.link(target=rota).classes("no-underline w-full"):
@@ -67,7 +70,7 @@ async def pagina_inicio() -> None:
                 status()
 
             # --------------------------------------------------------- projeto
-            with ui.card().classes("w-80 p-5 gap-3"):
+            with ui.card().classes("w-full p-5 gap-3"):
                 ui.label("Projeto").classes("es-section-title")
 
                 def carregar_exemplo() -> None:
@@ -97,8 +100,8 @@ async def pagina_inicio() -> None:
                           on_click=carregar_exemplo).classes("w-full")
                 ui.button("Baixar projeto atual", icon="download",
                           on_click=baixar).props("outline").classes("w-full")
-                ui.upload(label="Importar projeto.json", on_upload=importar, auto_upload=True) \
-                    .props("accept=.json flat bordered").classes("w-full")
+                dropzone('Importar <span class="es-mono" style="color:#334155">projeto.json</span>',
+                         "Arraste ou clique para enviar", importar, accept=".json")
 
         # ------------------------------------------------------------ pipeline
         ui.label("O pipeline").classes("es-eyebrow").style("color:#7c8696;margin-top:8px")

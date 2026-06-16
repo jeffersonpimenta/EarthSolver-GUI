@@ -19,8 +19,9 @@ from pathlib import Path
 from nicegui import ui
 
 from gui import graficos, recursos
+from gui.componentes import campo_num, dropzone
 from gui.estado import obter_projeto
-from gui.layout import barra_passos, botao_proximo, cabecalho, moldura
+from gui.layout import barra_passos, cabecalho, moldura
 from gui.solver import (
     condutores_do_spec,
     escanear_dxf,
@@ -60,67 +61,103 @@ async def pagina_malha() -> None:
         cabecalho("Passo 2", "Malha e corrente de falta")
         barra_passos(2)
 
-        # ---------------------------------------------------------- geometria
-        with ui.card().classes("w-full p-5 gap-2"):
-            ui.label("Geometria do eletrodo").classes("es-section-title")
-            with ui.tabs().props("inline-label no-caps").classes("self-start") as abas:
-                ui.tab("ret", "Parametros (malha retangular)")
-                ui.tab("dxf", "Importar DXF")
-            abas.value = "ret"
-            with ui.tab_panels(abas, value="ret").classes("w-full"):
-                with ui.tab_panel("ret"):
-                    campos_ret: dict = {}
-                    with ui.grid(columns=3).classes("gap-3"):
-                        for k in _RET:
-                            campos_ret[k] = ui.number(k, value=float(ret_base[k]))
-                with ui.tab_panel("dxf"):
-                    ui.markdown("DXF -> **somente metodo numerico** (o IEEE-80 exige "
-                                "malha retangular). Mapeie cada layer como fio ou haste.")
-                    with ui.row().classes("gap-4 items-center"):
-                        escala = ui.number("Escala (desenho->m)", value=1.0).classes("w-40")
-                        padrao_prof = ui.number("Prof. padrao (m)", value=0.5).classes("w-40")
-                        padrao_raio = ui.number("Raio padrao (m)", value=0.005).classes("w-40")
+        # previa (refreshables definidos antes para ficarem na coluna direita)
+        @ui.refreshable
+        def preview() -> None:
+            dados = estado.get("preview")
+            if not dados:
+                ui.label("Pre-visualize para ver a geometria.").classes("text-sm text-grey")
+                return
+            ui.plotly(graficos.vista_malha(dados["condutores"])).classes("w-full")
 
-                    @ui.refreshable
-                    def tabela_layers() -> None:
-                        campos_layer.clear()
-                        if not estado["dxf_path"]:
-                            ui.label("Envie um DXF para mapear as layers.").classes("text-grey")
-                            return
-                        scan = escanear_dxf(estado["dxf_path"])
-                        for nome, info in scan.items():
-                            with ui.row().classes("items-center gap-3"):
-                                ui.label(f"{nome} ({info['n']})").classes("w-40")
-                                prof = ui.number("prof", value=0.5).classes("w-24")
-                                raio = ui.number("raio", value=0.005).classes("w-24")
-                                rod = ui.checkbox("haste")
-                                comp = ui.number("comp", value=3.0).classes("w-24")
-                                campos_layer[nome] = {"prof": prof, "raio": raio,
-                                                      "rod": rod, "comp": comp}
+        @ui.refreshable
+        def preview_meta() -> None:
+            dados = estado.get("preview")
+            txt = (f"≈ {dados['n']} segmentos estimados (comp_alvo {_COMP_ALVO_PREVIA} m)"
+                   if dados else "—")
+            ui.label(txt).classes("es-card-meta")
 
-                    async def importar_dxf(e) -> None:
-                        destino = Path(tempfile.gettempdir()) / f"earthgui_{uuid.uuid4().hex}.dxf"
-                        await e.file.save(destino)
-                        estado["dxf_path"] = str(destino)
-                        tabela_layers.refresh()
-                        ui.notify(f"{e.file.name} carregado.", type="positive")
+        # previa ja pintada por padrao a partir da geometria retangular (mesmo sem DXF)
+        try:
+            _spec0 = {"malha_retangular": {k: float(ret_base[k]) for k in _RET}}
+            estado["preview"] = {"n": estimar_segmentos(_spec0, _COMP_ALVO_PREVIA),
+                                 "condutores": condutores_do_spec(_spec0)}
+        except Exception:  # noqa: BLE001
+            pass
 
-                    ui.upload(label="Importar DXF", on_upload=importar_dxf, auto_upload=True) \
-                        .props("accept=.dxf flat bordered").classes("max-w-md")
-                    tabela_layers()
+        # ---------------------------------------------- geometria + previa (grade)
+        with ui.grid().classes("w-full gap-5 items-stretch") \
+                .style("grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)"):
+            with ui.card().classes("w-full h-full p-0 overflow-hidden"):
+                ui.label("Geometria do eletrodo").classes("es-section-title px-5 pt-5")
+                with ui.tabs().props("inline-label no-caps").classes("self-start px-3") as abas:
+                    ui.tab("ret", "Parametros (malha retangular)")
+                    ui.tab("dxf", "Importar DXF")
+                abas.value = "ret"
+                with ui.tab_panels(abas, value="ret").classes("w-full"):
+                    with ui.tab_panel("ret"):
+                        campos_ret: dict = {}
+                        with ui.grid(columns=3).classes("gap-3 w-full"):
+                            for k in _RET:
+                                unidade = "" if k == "n_hastes" else "m"
+                                campos_ret[k] = campo_num(k, float(ret_base[k]), unit=unidade)
+                    with ui.tab_panel("dxf"):
+                        ui.markdown("DXF -> **somente metodo numerico** (o IEEE-80 exige "
+                                    "malha retangular). Mapeie cada layer como fio ou haste.")
+                        with ui.row().classes("gap-4 items-center"):
+                            escala = ui.number("Escala (desenho->m)", value=1.0).classes("w-40")
+                            padrao_prof = ui.number("Prof. padrao (m)", value=0.5).classes("w-40")
+                            padrao_raio = ui.number("Raio padrao (m)", value=0.005).classes("w-40")
+
+                        @ui.refreshable
+                        def tabela_layers() -> None:
+                            campos_layer.clear()
+                            if not estado["dxf_path"]:
+                                ui.label("Envie um DXF para mapear as layers.").classes("text-grey")
+                                return
+                            scan = escanear_dxf(estado["dxf_path"])
+                            for nome, info in scan.items():
+                                with ui.row().classes("items-center gap-3"):
+                                    ui.label(f"{nome} ({info['n']})").classes("w-40")
+                                    prof = ui.number("prof", value=0.5).classes("w-24")
+                                    raio = ui.number("raio", value=0.005).classes("w-24")
+                                    rod = ui.checkbox("haste")
+                                    comp = ui.number("comp", value=3.0).classes("w-24")
+                                    campos_layer[nome] = {"prof": prof, "raio": raio,
+                                                          "rod": rod, "comp": comp}
+
+                        async def importar_dxf(e) -> None:
+                            destino = Path(tempfile.gettempdir()) / f"earthgui_{uuid.uuid4().hex}.dxf"
+                            await e.file.save(destino)
+                            estado["dxf_path"] = str(destino)
+                            tabela_layers.refresh()
+                            ui.notify(f"{e.file.name} carregado.", type="positive")
+
+                        dropzone('Importar <span class="es-mono" style="color:#334155">'
+                                 'arquivo .dxf</span>', "Arraste ou clique para enviar",
+                                 importar_dxf, accept=".dxf")
+                        tabela_layers()
+
+            with ui.card().classes("w-full h-full p-0 overflow-hidden"):
+                with ui.row().classes("es-card-head"):
+                    ui.label("Previa da geometria").classes("es-card-head-title")
+                    preview_meta()
+                with ui.column().classes("w-full p-4"):
+                    preview()
 
         # ----------------------------------------------- parametros do estudo
-        with ui.card().classes("w-full p-5 gap-2"):
+        with ui.card().classes("w-full p-5 gap-3"):
             ui.label("Parametros do estudo").classes("es-section-title")
-            with ui.grid(columns=3).classes("gap-3"):
-                rho_s = ui.number("rho_s - brita (vazio = sem brita)",
-                                  value=malha_base.get("rho_s"))
-                h_s = ui.number("h_s - espessura brita (m)",
-                                value=float(malha_base.get("h_s", 0.1)), min=0.01)
-                ig = ui.number("Ig (A)", value=float(falta_base["Ig"]))
-                tf = ui.number("t (s)", value=float(falta_base["t"]))
-                peso = ui.select({50: "50 kg", 70: "70 kg"},
-                                 value=int(falta_base.get("peso", 70)), label="Peso")
+            with ui.grid(columns=5).classes("gap-3 w-full"):
+                rho_s = campo_num("rho_s — brita", malha_base.get("rho_s"), unit="Ω·m")
+                h_s = campo_num("h_s", float(malha_base.get("h_s", 0.1)), unit="m", min=0.01)
+                ig = campo_num("Ig", float(falta_base["Ig"]), unit="A")
+                tf = campo_num("t", float(falta_base["t"]), unit="s")
+                with ui.column().classes("gap-1.5"):
+                    ui.label("Peso").classes("es-field-label")
+                    peso = ui.select({50: "50 kg", 70: "70 kg"},
+                                     value=int(falta_base.get("peso", 70))) \
+                        .props("outlined dense").classes("es-num w-full")
 
         def _spec() -> dict:
             if abas.value == "ret":
@@ -138,19 +175,6 @@ async def pagina_malha() -> None:
                     "layers": layers}
             return {"dxf": estado["dxf_path"], "mapa": mapa}
 
-        # ---------------------------------------------------------- previa
-        @ui.refreshable
-        def preview() -> None:
-            dados = estado.get("preview")
-            if not dados:
-                return
-            with ui.card().classes("w-full p-5 gap-2"):
-                with ui.row().classes("items-center justify-between w-full"):
-                    ui.label("Previa da geometria").classes("es-section-title")
-                    ui.label(f"≈ {dados['n']} segmentos (comp_alvo {_COMP_ALVO_PREVIA} m)") \
-                        .classes("text-sm text-grey font-mono")
-                ui.plotly(graficos.vista_malha(dados["condutores"])).classes("w-full")
-
         def pre_visualizar() -> None:
             try:
                 spec = _spec()
@@ -161,6 +185,7 @@ async def pagina_malha() -> None:
                 return
             estado["preview"] = {"n": n, "condutores": conds}
             preview.refresh()
+            preview_meta.refresh()
 
         def usar() -> None:
             try:
@@ -179,10 +204,10 @@ async def pagina_malha() -> None:
                 proj.malha = brita
             ui.notify("Malha e falta salvas no projeto.", type="positive")
 
-        with ui.row().classes("items-center gap-3"):
-            ui.button("Pre-visualizar", icon="visibility",
-                      on_click=pre_visualizar).props("outline")
-            ui.button("Usar no projeto", icon="check", on_click=usar)
-
-        preview()
-        botao_proximo("/calculo", "Ir para o calculo")
+        with ui.row().classes("items-center justify-between w-full flex-wrap gap-3"):
+            with ui.row().classes("items-center gap-3"):
+                ui.button("Pre-visualizar", icon="visibility",
+                          on_click=pre_visualizar).props("outline")
+                ui.button("Usar no projeto", icon="check", on_click=usar)
+            ui.button("Ir para o calculo", icon="arrow_forward",
+                      on_click=lambda: ui.navigate.to("/calculo")).props("outline")

@@ -7,6 +7,7 @@ import json
 from nicegui import run, ui
 
 from gui import graficos
+from gui.componentes import botao_importar, campo_num, segmented
 from gui.estado import obter_projeto
 from gui.layout import barra_passos, botao_proximo, cabecalho, moldura
 from gui.solver import rodar_estratificacao
@@ -33,34 +34,67 @@ async def pagina_estratificacao() -> None:
         cabecalho("Passo 1", "Estratificacao do solo")
         barra_passos(1)
 
-        with ui.card().classes("w-full p-5 gap-3"):
-            ui.label("Sondagem de Wenner").classes("es-section-title")
-            ui.markdown("Cole ou envie a sondagem (`espacamento, valor` por linha; "
-                        "valor = resistencia em Ohm, ou rho aparente se o cabecalho disser).") \
-                .classes("text-sm text-grey")
+        with ui.grid().classes("w-full gap-5 items-start") \
+                .style("grid-template-columns:minmax(0,1fr) minmax(0,1fr)"):
+            # ----------------------------------------------- sondagem de Wenner
+            with ui.card().classes("w-full p-5 gap-3"):
+                ui.label("Sondagem de Wenner").classes("es-section-title")
+                ui.markdown("Cole ou envie a sondagem (`espacamento, valor` por linha; "
+                            "valor = resistencia em Ohm, ou rho aparente se o cabecalho disser).") \
+                    .classes("text-sm text-grey")
 
-            entrada = ui.textarea("Sondagem", value=texto_inicial) \
-                .props("outlined rows=8").classes("w-full font-mono")
+                entrada = ui.textarea("Sondagem", value=texto_inicial) \
+                    .props("outlined rows=8").classes("w-full font-mono")
 
-            async def importar_csv(e) -> None:
-                entrada.value = (await e.file.text()).strip()
-                ui.notify(f"{e.file.name} carregado.", type="positive")
+                async def importar_csv(e) -> None:
+                    entrada.value = (await e.file.text()).strip()
+                    ui.notify(f"{e.file.name} carregado.", type="positive")
 
-            ui.upload(label="Importar CSV", on_upload=importar_csv, auto_upload=True) \
-                .props("accept=.csv,.txt flat bordered").classes("max-w-md")
+                with ui.row().classes("items-center gap-2"):
+                    botao_importar("Importar CSV", importar_csv, accept=".csv,.txt")
 
-            with ui.row().classes("items-center gap-4"):
-                modo = ui.radio({"auto": "Automatico", "fixo": "Numero fixo"},
-                                value="auto").props("inline")
-                n_fixo = ui.number("Camadas", value=2, min=1, max=6, format="%d").classes("w-28")
-                max_cam = ui.number("Max (auto)", value=3, min=1, max=6, format="%d").classes("w-28")
+                ui.element("div").classes("es-div")
 
-            with ui.row().classes("items-center gap-3"):
-                botao = ui.button("Estratificar", icon="play_arrow")
-                spin = ui.spinner(size="lg").classes("hidden")
+                with ui.row().classes("items-end gap-4 flex-wrap"):
+                    with ui.column().classes("gap-1.5"):
+                        ui.label("Modo").classes("es-field-label").style("color:#475569")
+                        modo = segmented({"auto": "Automatico", "fixo": "Numero fixo"}, "auto")
+                    n_fixo = campo_num("Camadas", 2, min=1, max=6, format="%d")
+                    n_fixo.style("width:84px").bind_visibility_from(modo, "value", value="fixo")
+                    max_cam = campo_num("Max (auto)", 3, min=1, max=6, format="%d")
+                    max_cam.style("width:84px").bind_visibility_from(modo, "value", value="auto")
+                    botao = ui.button("Estratificar", icon="play_arrow") \
+                        .classes("shrink-0 whitespace-nowrap")
+                    spin = ui.spinner(size="lg").classes("hidden")
 
+            # -------------------------------------------------- curva de Wenner
+            with ui.card().classes("w-full p-0 overflow-hidden"):
+                with ui.row().classes("es-card-head"):
+                    ui.label("Curva de Wenner — ρ aparente").classes("es-card-head-title")
+                    with ui.row().classes("es-legend"):
+                        with ui.row().classes("es-legend-item"):
+                            ui.element("div").classes("es-legend-dot")
+                            ui.label("medido")
+                        with ui.row().classes("es-legend-item"):
+                            ui.element("div").classes("es-legend-line")
+                            ui.label("ajuste")
+                with ui.column().classes("w-full p-4"):
+                    @ui.refreshable
+                    def curva() -> None:
+                        res = estado["res"]
+                        if not res:
+                            ui.label("Estratifique para ver a curva.") \
+                                .classes("text-sm text-grey")
+                            return
+                        c = res["curva"]
+                        ui.plotly(graficos.curva_wenner(c["a"], c["rho_medido"],
+                                                        c["a_fit"], c["rho_fit"])).classes("w-full")
+
+                    curva()
+
+        # -------------------------------------------- modelo de solo (largura total)
         @ui.refreshable
-        def resultado() -> None:
+        def solo_card() -> None:
             res = estado["res"]
             if not res:
                 return
@@ -87,10 +121,6 @@ async def pagina_estratificacao() -> None:
                     {"name": "espessura", "label": "Espessura (m)", "field": "espessura", "align": "left"},
                 ], rows=linhas).props("flat").classes("w-full")
 
-                c = res["curva"]
-                ui.plotly(graficos.curva_wenner(c["a"], c["rho_medido"],
-                                                c["a_fit"], c["rho_fit"])).classes("w-full")
-
                 def usar() -> None:
                     proj.solo = solo
                     proj.sondagem = estado["entrada"]
@@ -102,6 +132,8 @@ async def pagina_estratificacao() -> None:
                 with ui.row().classes("gap-3"):
                     ui.button("Usar no projeto", icon="check", on_click=usar)
                     ui.button("Baixar solo.json", icon="download", on_click=baixar).props("flat")
+
+        solo_card()
 
         async def estratificar() -> None:
             try:
@@ -122,12 +154,12 @@ async def pagina_estratificacao() -> None:
                 estado["entrada"] = {"espacamentos": espac, chave: valores,
                                      "camadas": camadas, "max_camadas": int(max_cam.value)}
                 estado["res"] = res
-                resultado.refresh()
+                curva.refresh()
+                solo_card.refresh()
                 ui.notify("Estratificacao concluida.", type="positive")
             finally:
                 spin.classes(add="hidden")
                 botao.enable()
 
         botao.on_click(estratificar)
-        resultado()
         botao_proximo("/malha", "Ir para a malha")

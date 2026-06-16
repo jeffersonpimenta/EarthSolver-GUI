@@ -13,6 +13,12 @@ from __future__ import annotations
 import numpy as np
 import plotly.graph_objects as go
 
+# Paleta do mapa de potencial (baixo->alto), alinhada ao handoff de design.
+ESCALA_POTENCIAL = [
+    [0.0, "#2563eb"], [1 / 7, "#0ea5e9"], [2 / 7, "#22c55e"], [3 / 7, "#84cc16"],
+    [4 / 7, "#facc15"], [5 / 7, "#f59e0b"], [6 / 7, "#ea580c"], [1.0, "#b91c1c"],
+]
+
 
 def _eixos_1d(x, y):
     """Reduz X, Y (meshgrid 2D) para os vetores de eixo 1D; aceita ja-1D."""
@@ -52,7 +58,8 @@ def curva_wenner(a, rho_medido, a_fit, rho_fit) -> go.Figure:
         title="Resistividade aparente (Wenner)",
         xaxis=dict(title="Espacamento a (m)", type="log"),
         yaxis=dict(title="rho_a (Ohm.m)", type="log"),
-        margin=dict(l=60, r=20, t=40, b=50),
+        showlegend=False,
+        margin=dict(l=55, r=15, t=30, b=45),
     )
     return fig
 
@@ -62,7 +69,7 @@ def mapa_potencial(x, y, phi, gpr=None, condutores=None) -> go.Figure:
     xs, ys = _eixos_1d(x, y)
     phi = np.asarray(phi, dtype=float)
     fig = go.Figure()
-    fig.add_trace(go.Heatmap(x=xs, y=ys, z=phi, colorscale="Viridis",
+    fig.add_trace(go.Heatmap(x=xs, y=ys, z=phi, colorscale=ESCALA_POTENCIAL,
                              colorbar=dict(title="Phi (V)")))
     fig.add_trace(go.Contour(x=xs, y=ys, z=phi, showscale=False,
                              contours=dict(coloring="lines"),
@@ -85,7 +92,7 @@ def superficie_3d(x, y, phi) -> go.Figure:
     """Superficie 3D interativa do potencial (substitui o plot 3D matplotlib)."""
     xs, ys = _eixos_1d(x, y)
     phi = np.asarray(phi, dtype=float)
-    fig = go.Figure(go.Surface(x=xs, y=ys, z=phi, colorscale="Viridis",
+    fig = go.Figure(go.Surface(x=xs, y=ys, z=phi, colorscale=ESCALA_POTENCIAL,
                                colorbar=dict(title="Phi (V)")))
     fig.update_layout(
         title="Potencial de superficie (3D)",

@@ -164,6 +164,57 @@ body, .q-page, .nicegui-content {
 /* ---- inputs / abas ---- */
 .q-field--outlined .q-field__control { border-radius: 8px; }
 .q-tab { text-transform: none; font-weight: 600; }
+
+/* ---- divisoria fina ---- */
+.es-div { height: 1px; background: #eef0f3; width: 100%; }
+
+/* ---- cabecalho de cartao emoldurado (plot/previa) ---- */
+.es-card-head { align-items: center; justify-content: space-between; width: 100%;
+  padding: 13px 16px; border-bottom: 1px solid #eef0f3; }
+.es-card-head-title { font-size: 13px; font-weight: 600; color: #334155; }
+.es-card-meta { font-size: 11.5px; color: #64748b; font-family: 'IBM Plex Mono'; }
+
+/* ---- legenda da curva ---- */
+.es-legend { gap: 14px; font-size: 11px; color: #94a3b8; font-family: 'IBM Plex Mono'; }
+.es-legend-item { align-items: center; gap: 5px; }
+.es-legend-dot { width: 9px; height: 9px; border-radius: 50%; background: #94a3b8; }
+.es-legend-line { width: 12px; height: 3px; border-radius: 2px; background: var(--es-accent); }
+
+/* ---- campo numerico (rotulo mono acima + valor mono + sufixo) ---- */
+.es-field-label { font-size: 11.5px; font-weight: 600; color: #64748b;
+  font-family: 'IBM Plex Mono'; }
+.es-num .q-field__control { border-radius: 8px; min-height: 40px; }
+.es-num .q-field__control:before { border-color: #d6dbe2; }
+.es-num input { font-family: 'IBM Plex Mono'; font-size: 14px; color: #0f172a; }
+.es-num .q-field__suffix, .es-num .q-field__append {
+  color: #aab2bf; font-family: 'IBM Plex Mono'; font-size: 12px; }
+
+/* ---- controle segmentado (ui.toggle restilizado) ---- */
+.es-segmented.q-btn-group { box-shadow: none; border: none; background: #f1f3f5;
+  border-radius: 8px; padding: 3px; gap: 2px; }
+.es-segmented .q-btn { border: none !important; border-radius: 6px !important;
+  min-height: 0 !important; padding: 6px 13px !important; font-size: 13px;
+  font-weight: 500; color: #64748b; box-shadow: none !important; }
+.es-segmented .q-btn .q-btn__content { padding: 0; }
+.es-segmented .q-btn:not(.q-btn--flat), .es-segmented .q-btn--active {
+  background: #fff; color: #0f172a; font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06) !important; }
+
+/* ---- dropzone (importar arquivo) ---- */
+.es-dropzone { border: 1.5px dashed #d0d6de; border-radius: 11px; background: #fafbfc;
+  cursor: pointer; display: flex; transition: background .12s, border-color .12s; }
+.es-dropzone:hover { background: #f4f7fb; border-color: #bcc6d3; }
+.es-dz-col { flex-direction: column; align-items: center; text-align: center;
+  padding: 18px 16px; gap: 6px; }
+.es-dz-row { flex-direction: row; align-items: center; padding: 22px; gap: 14px; }
+.es-dz-text { display: flex; flex-direction: column; gap: 3px; }
+.es-dz-col .es-dz-text { align-items: center; }
+.es-dz-title { font-size: 13.5px; font-weight: 600; color: #334155; }
+.es-dz-sub { font-size: 11.5px; color: #94a3b8; }
+
+/* ---- variantes de borda dos cartoes de metrica ---- */
+.es-metric-ok { border-color: #bfe3d1 !important; }
+.es-metric-no { border-color: #f3c7c2 !important; }
 """
 
 

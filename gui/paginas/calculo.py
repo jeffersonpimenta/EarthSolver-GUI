@@ -15,7 +15,7 @@ from multiprocessing import Manager
 from nicegui import run, ui
 
 from gui import graficos
-from gui.componentes import barra_progresso, cartoes_resultado, num_json, selo
+from gui.componentes import barra_progresso, campo_num, cartoes_resultado, num_json, segmented, selo
 from gui.estado import obter_projeto
 from gui.layout import barra_passos, cabecalho, moldura
 from gui.solver import rodar_analitico, rodar_convergencia, rodar_numerico
@@ -91,18 +91,22 @@ async def pagina_calculo() -> None:
         analitico_ok = "malha_retangular" in proj.eletrodo and "area" in (proj.malha or {})
 
         # ---------------------------------------------------------- metodo
-        with ui.card().classes("w-full p-5 gap-2"):
-            ui.label("Metodo de calculo").classes("es-section-title")
-            if analitico_ok:
-                metodo = ui.radio({"ieee80": "IEEE-80", "numerico": "Numerico",
-                                   "ambos": "Ambos (comparar)"}, value="ambos").props("inline")
-            else:
+        with ui.card().classes("w-full p-5 gap-3"):
+            with ui.row().classes("items-center justify-between w-full flex-wrap gap-4"):
+                with ui.column().classes("gap-2"):
+                    ui.label("Metodo de calculo").classes("es-section-title")
+                    if analitico_ok:
+                        metodo = segmented({"ieee80": "IEEE-80", "numerico": "Numerico",
+                                            "ambos": "Ambos (comparar)"}, "ambos")
+                    else:
+                        metodo = segmented({"numerico": "Numerico"}, "numerico")
+                comp_alvo = campo_num("comp_alvo (m)", 5.0, unit="m", min=0.1)
+                comp_alvo.style("width:150px")
+                botao = ui.button("Calcular", icon="play_arrow")
+            if not analitico_ok:
                 ui.label("Geometria nao retangular (DXF) -> IEEE-80 indisponivel; "
-                         "apenas o metodo numerico.").classes("text-warning")
-                metodo = ui.radio({"numerico": "Numerico"}, value="numerico").props("inline")
-            ui.label("Opcoes do metodo numerico").classes("text-sm text-grey")
-            comp_alvo = ui.number("comp_alvo (m) - resolucao da segmentacao",
-                                  value=5.0, min=0.1).classes("w-72")
+                         "apenas o metodo numerico.").classes("text-warning text-sm")
+        barra_calc = barra_progresso()
 
         # ---------------------------------------------------------- resultado
         @ui.refreshable
@@ -112,27 +116,31 @@ async def pagina_calculo() -> None:
             if not ieee and not num:
                 return
 
-            if ieee and num:
-                with ui.row().classes("items-center gap-4"):
-                    selo(bool(ieee.get("aprovado") and num["resultado"].get("aprovado")))
-                with ui.card().classes("w-full p-0 overflow-hidden"):
-                    _tabela_comparacao(ieee, num["resultado"])
+            ambos = bool(ieee and num)
+            if ambos:
+                ok = bool(ieee.get("aprovado") and num["resultado"].get("aprovado"))
+                with ui.row().classes("items-center gap-4 flex-wrap"):
+                    selo(ok)
+                    ui.label("Toque e passo dentro dos limites do IEEE Std 80 para a corrente "
+                             "de falta informada." if ok else
+                             "Toque e/ou passo excedem os limites do IEEE Std 80 — revise a "
+                             "malha ou a brita.").classes("text-sm text-grey")
             else:
                 cartoes_resultado(ieee or num["resultado"])
 
-            if ieee:
-                ui.label("Fatores IEEE-80").classes("es-section-title")
-                with ui.card().classes("w-full p-0 overflow-hidden"):
-                    _tabela_fatores(ieee)
+            def _card_comparacao() -> None:
+                with ui.card().classes("w-full h-full p-0 overflow-hidden"):
+                    with ui.row().classes("es-card-head"):
+                        ui.label("IEEE-80 × Numerico").classes("es-card-head-title")
+                    _tabela_comparacao(ieee, num["resultado"])
 
-            if num:
+            def _card_graficos() -> None:
                 ras = num["raster"]
                 rt, rp = num["raster_toque"], num["raster_passo"]
                 cor, conds = num["corrente"], num["condutores"]
                 et, ep = num["resultado"]["E_toque"], num["resultado"]["E_passo"]
-                ui.label("Graficos do solver numerico").classes("es-section-title")
-                with ui.card().classes("w-full p-3"):
-                    with ui.tabs().props("no-caps").classes("self-start") as plots:
+                with ui.card().classes("w-full h-full p-3"):
+                    with ui.tabs().props("no-caps active-color=primary").classes("w-full") as plots:
                         ui.tab("mapa", "Mapa de potencial")
                         ui.tab("toque", "Tensao de toque")
                         ui.tab("passo", "Tensao de passo")
@@ -175,6 +183,19 @@ async def pagina_calculo() -> None:
                                 "Tensao de toque (3D)", "V")).classes("w-full")
                         with ui.tab_panel("geo"):
                             ui.plotly(graficos.vista_malha(conds)).classes("w-full")
+
+            if ambos:
+                with ui.grid().classes("w-full gap-5 items-stretch") \
+                        .style("grid-template-columns:minmax(0,1fr) minmax(0,1.25fr)"):
+                    _card_comparacao()
+                    _card_graficos()
+            elif num:
+                _card_graficos()
+
+            if ieee:
+                ui.label("Fatores IEEE-80").classes("es-section-title")
+                with ui.card().classes("w-full p-0 overflow-hidden"):
+                    _tabela_fatores(ieee)
 
             def usar() -> None:
                 if ieee:
@@ -241,9 +262,7 @@ async def pagina_calculo() -> None:
             resultado.refresh()
             ui.notify("Calculo concluido.", type="positive")
 
-        with ui.row().classes("items-center gap-3"):
-            botao = ui.button("Calcular", icon="play_arrow", on_click=calcular)
-        barra_calc = barra_progresso()
+        botao.on_click(calcular)
 
         resultado()
 

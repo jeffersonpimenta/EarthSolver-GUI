@@ -10,7 +10,7 @@ import numpy as np
 from nicegui import ui
 
 from gui import graficos
-from gui.componentes import cartoes_resultado
+from gui.componentes import cartoes_resultado, dropzone
 from gui.layout import cabecalho, moldura
 
 
@@ -46,11 +46,14 @@ async def pagina_visualizador() -> None:
             vista.refresh()
             ui.notify("Mapa de potencial carregado.", type="positive")
 
-        with ui.row().classes("gap-6 w-full"):
-            ui.upload(label="Resultado (.json)", on_upload=importar_resultado, auto_upload=True) \
-                .props("accept=.json flat bordered").classes("flex-1")
-            ui.upload(label="Potencial (.json)", on_upload=importar_potencial, auto_upload=True) \
-                .props("accept=.json flat bordered").classes("flex-1")
+        with ui.grid().classes("w-full gap-4") \
+                .style("grid-template-columns:minmax(0,1fr) minmax(0,1fr)"):
+            dropzone("Resultado (.json)",
+                     '<span class="es-mono" style="color:#475569">aterramento_numerico.json</span>',
+                     importar_resultado, accept=".json", vertical=False, icon="file")
+            dropzone("Potencial (.json)",
+                     '<span class="es-mono" style="color:#475569">potencial.json</span>',
+                     importar_potencial, accept=".json", vertical=False, icon="file")
 
         @ui.refreshable
         def vista() -> None:
