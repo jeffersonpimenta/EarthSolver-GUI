@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "earthsolver-gui"
+version = "0.1.0"
+description = "Interface web (NiceGUI) para o EarthSolver"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+dependencies = [
+    "nicegui>=2.0",
+    "plotly",
+    "numpy",
+    "earthsolver @ git+https://github.com/jeffersonpimenta/EarthSolver.git",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "httpx", "ruff"]
+
+[project.scripts]
+earthsolver-gui = "gui.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["gui"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+main_file = "gui/main.py"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]

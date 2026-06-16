@@ -1,0 +1,183 @@
+"""Passo 2 do pipeline: definicao da malha + corrente de falta.
+
+A geometria do eletrodo e definida de um de dois modos:
+  - Parametros (malha retangular): alimenta tanto o IEEE-80 quanto o numerico.
+  - Importar DXF: geometria arbitraria; so o solver numerico.
+
+Aqui tambem ficam os parametros do estudo compartilhados pelos dois metodos:
+brita (rho_s, h_s) e corrente de falta (Ig, t, peso). A pre-visualizacao (so
+geometria, sem resolver) usa um comp_alvo de referencia.
+"""
+
+from __future__ import annotations
+
+import json
+import tempfile
+import uuid
+from pathlib import Path
+
+from nicegui import ui
+
+from gui import graficos, recursos
+from gui.estado import obter_projeto
+from gui.layout import barra_passos, botao_proximo, moldura
+from gui.solver import (
+    condutores_do_spec,
+    escanear_dxf,
+    estimar_segmentos,
+    params_malha_analitica,
+)
+
+_RET = ["comprimento_x", "comprimento_y", "espac_x", "espac_y",
+        "prof_h", "d", "n_hastes", "comp_haste"]
+
+# comp_alvo usado so na previa (o valor do calculo fica na pagina de calculo)
+_COMP_ALVO_PREVIA = 5.0
+
+
+def _defaults() -> tuple[dict, dict, dict]:
+    """(malha_retangular, malha analitica, falta) do projeto de exemplo."""
+    ret = json.loads(recursos.caminho_exemplo("eletrodo_malha.json")
+                     .read_text(encoding="utf-8"))["malha_retangular"]
+    proj = json.loads(recursos.caminho_exemplo("projeto.json").read_text(encoding="utf-8"))
+    return ret, proj["malha"], proj["falta"]
+
+
+@ui.page("/malha")
+async def pagina_malha() -> None:
+    await ui.context.client.connected()
+    proj = obter_projeto()
+    estado: dict = {"dxf_path": None}
+    campos_layer: dict = {}
+
+    ret_def, malha_def, falta_def = _defaults()
+    # pre-preenche a geometria retangular a partir do projeto, se houver
+    ret_base = (proj.eletrodo or {}).get("malha_retangular") or ret_def
+    malha_base = proj.malha or malha_def
+    falta_base = proj.falta or falta_def
+
+    with moldura("Malha e corrente de falta"):
+        barra_passos(2)
+
+        # ---------------------------------------------------------- geometria
+        ui.label("Geometria do eletrodo").classes("font-bold")
+        with ui.tabs() as abas:
+            ui.tab("ret", "Parametros (malha retangular)")
+            ui.tab("dxf", "Importar DXF")
+        abas.value = "ret"
+        with ui.tab_panels(abas, value="ret").classes("w-full"):
+            with ui.tab_panel("ret"):
+                campos_ret: dict = {}
+                with ui.grid(columns=3).classes("gap-3"):
+                    for k in _RET:
+                        campos_ret[k] = ui.number(k, value=float(ret_base[k]))
+            with ui.tab_panel("dxf"):
+                ui.markdown("DXF -> **somente metodo numerico** (o IEEE-80 exige "
+                            "malha retangular). Mapeie cada layer como fio ou haste.")
+                with ui.row().classes("gap-4 items-center"):
+                    escala = ui.number("Escala (desenho->m)", value=1.0).classes("w-40")
+                    padrao_prof = ui.number("Prof. padrao (m)", value=0.5).classes("w-40")
+                    padrao_raio = ui.number("Raio padrao (m)", value=0.005).classes("w-40")
+
+                @ui.refreshable
+                def tabela_layers() -> None:
+                    campos_layer.clear()
+                    if not estado["dxf_path"]:
+                        ui.label("Envie um DXF para mapear as layers.").classes("text-grey")
+                        return
+                    scan = escanear_dxf(estado["dxf_path"])
+                    for nome, info in scan.items():
+                        with ui.row().classes("items-center gap-3"):
+                            ui.label(f"{nome} ({info['n']})").classes("w-40")
+                            prof = ui.number("prof", value=0.5).classes("w-24")
+                            raio = ui.number("raio", value=0.005).classes("w-24")
+                            rod = ui.checkbox("haste")
+                            comp = ui.number("comp", value=3.0).classes("w-24")
+                            campos_layer[nome] = {"prof": prof, "raio": raio,
+                                                  "rod": rod, "comp": comp}
+
+                async def importar_dxf(e) -> None:
+                    destino = Path(tempfile.gettempdir()) / f"earthgui_{uuid.uuid4().hex}.dxf"
+                    await e.file.save(destino)
+                    estado["dxf_path"] = str(destino)
+                    tabela_layers.refresh()
+                    ui.notify(f"{e.file.name} carregado.", type="positive")
+
+                ui.upload(label="Importar DXF", on_upload=importar_dxf, auto_upload=True) \
+                    .props("accept=.dxf flat bordered").classes("max-w-md")
+                tabela_layers()
+
+        # ----------------------------------------------- parametros do estudo
+        with ui.card().classes("w-full"):
+            ui.label("Parametros do estudo").classes("font-bold")
+            with ui.grid(columns=3).classes("gap-3"):
+                rho_s = ui.number("rho_s - brita (vazio = sem brita)",
+                                  value=malha_base.get("rho_s"))
+                h_s = ui.number("h_s - espessura brita (m)",
+                                value=float(malha_base.get("h_s", 0.1)), min=0.01)
+                ig = ui.number("Ig (A)", value=float(falta_base["Ig"]))
+                tf = ui.number("t (s)", value=float(falta_base["t"]))
+                peso = ui.select({50: "50 kg", 70: "70 kg"},
+                                 value=int(falta_base.get("peso", 70)), label="Peso")
+
+        def _spec() -> dict:
+            if abas.value == "ret":
+                return {"malha_retangular": {k: campos_ret[k].value for k in _RET}}
+            if not estado["dxf_path"]:
+                raise ValueError("envie um arquivo DXF")
+            layers = {}
+            for nome, w in campos_layer.items():
+                ent = {"prof": w["prof"].value, "raio": w["raio"].value}
+                if w["rod"].value:
+                    ent.update(rod=True, comp=w["comp"].value)
+                layers[nome] = ent
+            mapa = {"escala": escala.value,
+                    "padrao": {"prof": padrao_prof.value, "raio": padrao_raio.value},
+                    "layers": layers}
+            return {"dxf": estado["dxf_path"], "mapa": mapa}
+
+        # ---------------------------------------------------------- previa
+        @ui.refreshable
+        def preview() -> None:
+            dados = estado.get("preview")
+            if not dados:
+                return
+            ui.label(f"{dados['n']} segmentos estimados (comp_alvo "
+                     f"{_COMP_ALVO_PREVIA} m)").classes("font-bold")
+            ui.plotly(graficos.vista_malha(dados["condutores"])).classes("w-full")
+
+        def pre_visualizar() -> None:
+            try:
+                spec = _spec()
+                n = estimar_segmentos(spec, _COMP_ALVO_PREVIA)
+                conds = condutores_do_spec(spec)
+            except Exception as exc:  # noqa: BLE001
+                ui.notify(f"Geometria invalida: {exc}", type="negative")
+                return
+            estado["preview"] = {"n": n, "condutores": conds}
+            preview.refresh()
+
+        def usar() -> None:
+            try:
+                spec = _spec()
+            except Exception as exc:  # noqa: BLE001
+                ui.notify(f"Geometria invalida: {exc}", type="negative")
+                return
+            brita = {"rho_s": rho_s.value, "h_s": h_s.value}
+            proj.eletrodo = spec
+            proj.falta = {"Ig": ig.value, "t": tf.value, "peso": int(peso.value)}
+            if "malha_retangular" in spec:
+                proj.malha = params_malha_analitica(
+                    spec["malha_retangular"], rho_s=brita["rho_s"], h_s=brita["h_s"])
+            else:
+                # DXF: sem malha retangular -> IEEE-80 indisponivel, guarda so a brita
+                proj.malha = brita
+            ui.notify("Malha e falta salvas no projeto.", type="positive")
+
+        with ui.row().classes("items-center gap-3"):
+            ui.button("Pre-visualizar", icon="visibility",
+                      on_click=pre_visualizar).props("flat")
+            ui.button("Usar no projeto", icon="check", on_click=usar)
+
+        preview()
+        botao_proximo("/calculo", "Ir para o calculo")
